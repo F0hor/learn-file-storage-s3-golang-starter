@@ -127,8 +127,10 @@ func main() {
 
 func contentTypeToFileExtention(contentType string) string {
 	switch contentType {
-    case "image":
+    case "image/png":
         return "png"
+    case "image/jpeg":
+        return "jpeg"
     default:
         return ""
   }

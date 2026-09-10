@@ -6,6 +6,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"mime"
 
 	"github.com/bootdotdev/learn-file-storage-s3-golang-starter/internal/auth"
 	"github.com/google/uuid"
@@ -42,7 +43,7 @@ func (cfg *apiConfig) handlerUploadThumbnail(w http.ResponseWriter, r *http.Requ
 		return
 	}
 	defer file.Close()
-	mediaType := header.Header.Get("Content-Type")
+	contentType, _, err := mime.ParseMediaType(header.Header.Get("Content-Type"))
 
 	video, err := cfg.db.GetVideo(videoID)
 	if err != nil {
@@ -54,7 +55,10 @@ func (cfg *apiConfig) handlerUploadThumbnail(w http.ResponseWriter, r *http.Requ
 		return
 	}
 
-	fileExtension := contentTypeToFileExtention(mediaType)
+	fileExtension := contentTypeToFileExtention(contentType)
+	if fileExtension != "png" && fileExtension != "jpeg" {
+		respondWithError(w, http.StatusBadRequest, "Wrong content type", fmt.Errorf("Unsupported file type", fileExtension))
+	}
 	fileName := videoID.String() + fileExtension
 	filePath := filepath.Join(cfg.assetsRoot, fileName)
 
