@@ -4,7 +4,8 @@ import (
 	"fmt"
 	"net/http"
 	"io"
-	"encoding/base64"
+	"os"
+	"path/filepath"
 
 	"github.com/bootdotdev/learn-file-storage-s3-golang-starter/internal/auth"
 	"github.com/google/uuid"
@@ -43,12 +44,6 @@ func (cfg *apiConfig) handlerUploadThumbnail(w http.ResponseWriter, r *http.Requ
 	defer file.Close()
 	mediaType := header.Header.Get("Content-Type")
 
-	data, err := io.ReadAll(file)
-	if err != nil {
-		respondWithError(w, http.StatusBadRequest, "Unable to parse form file", err)
-		return
-	}
-
 	video, err := cfg.db.GetVideo(videoID)
 	if err != nil {
 		respondWithError(w, http.StatusBadRequest, "Invalid ID", err)
@@ -59,8 +54,23 @@ func (cfg *apiConfig) handlerUploadThumbnail(w http.ResponseWriter, r *http.Requ
 		return
 	}
 
-	dataStr := base64.StdEncoding.EncodeToString(data)
-	dataURL := fmt.Sprintf("data:%v;base64,%v", mediaType, dataStr)
+	fileExtension := contentTypeToFileExtention(mediaType)
+	fileName := videoID.String() + fileExtension
+	filePath := filepath.Join(cfg.assetsRoot, fileName)
+
+	newFile, err := os.Create(filePath)
+	if err != nil {
+		respondWithError(w, http.StatusInternalServerError, "Unable to save file", err)
+		return
+	}
+
+	_, err = io.Copy(newFile, file)
+	if err != nil {
+		respondWithError(w, http.StatusInternalServerError, "Unable to save file", err)
+		return
+	}
+
+	dataURL := fmt.Sprintf("http://localhost:%v/assets/%v", cfg.port, fileName)
 
 	video.ThumbnailURL = &dataURL
 	err = cfg.db.UpdateVideo(video)

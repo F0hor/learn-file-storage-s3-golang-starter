@@ -124,3 +124,12 @@ func main() {
 	log.Printf("Serving on: http://localhost:%s/app/\n", port)
 	log.Fatal(srv.ListenAndServe())
 }
+
+func contentTypeToFileExtention(contentType string) string {
+	switch contentType {
+    case "image":
+        return "png"
+    default:
+        return ""
+  }
+}
