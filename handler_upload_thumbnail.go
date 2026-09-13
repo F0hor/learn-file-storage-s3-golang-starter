@@ -7,6 +7,8 @@ import (
 	"os"
 	"path/filepath"
 	"mime"
+	"encoding/base64"
+	"crypto/rand"
 
 	"github.com/bootdotdev/learn-file-storage-s3-golang-starter/internal/auth"
 	"github.com/google/uuid"
@@ -59,7 +61,9 @@ func (cfg *apiConfig) handlerUploadThumbnail(w http.ResponseWriter, r *http.Requ
 	if fileExtension != "png" && fileExtension != "jpeg" {
 		respondWithError(w, http.StatusBadRequest, "Wrong content type", fmt.Errorf("Unsupported file type", fileExtension))
 	}
-	fileName := videoID.String() + fileExtension
+	key := make([]byte, 32)
+	rand.Read(key)
+	fileName := base64.RawURLEncoding.EncodeToString(key) + "." + fileExtension
 	filePath := filepath.Join(cfg.assetsRoot, fileName)
 
 	newFile, err := os.Create(filePath)
