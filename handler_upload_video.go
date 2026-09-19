@@ -5,10 +5,13 @@ import (
 	"net/http"
 	"io"
 	"os"
+	"os/exec"
 	"mime"
 	"encoding/base64"
 	"crypto/rand"
 	"context"
+	"bytes"
+	"encoding/json"
 
 	"github.com/bootdotdev/learn-file-storage-s3-golang-starter/internal/auth"
 	"github.com/google/uuid"
@@ -87,9 +90,24 @@ func (cfg *apiConfig) handlerUploadVideo(w http.ResponseWriter, r *http.Request)
 		return
 	}
 
+	aspect, err := getVideoAspectRatio(tempFile.Name())
+	if err != nil {
+		respondWithError(w, http.StatusBadRequest, "Unable to read file", err)
+		return
+	}
+
+	var prefix string
+	if aspect == "16:9" {
+		prefix = "landscape"
+	} else if aspect == "9:16" {
+		prefix = "portrait"
+	} else {
+		prefix = "other"
+	}
+
 	key := make([]byte, 32)
 	rand.Read(key)
-	fileName := base64.RawURLEncoding.EncodeToString(key) + "." + fileExtension
+	fileName := prefix + "/" + base64.RawURLEncoding.EncodeToString(key) + "." + fileExtension
 
 	putObjectInput := s3.PutObjectInput{
 		Bucket: &cfg.s3Bucket,
@@ -110,4 +128,40 @@ func (cfg *apiConfig) handlerUploadVideo(w http.ResponseWriter, r *http.Request)
 		respondWithError(w, http.StatusInternalServerError, "Unable to save video", err)
 		return
 	}
+}
+
+func getVideoAspectRatio(filePath string) (string, error) {
+	cmd := exec.Command("ffprobe", "-v", "error", "-print_format", "json", "-show_streams", filePath)
+	var b bytes.Buffer
+	cmd.Stdout = &b
+
+	err := cmd.Run()
+	if err != nil {
+		return "", err
+	}
+
+	var probe map[string]interface{}
+	err = json.Unmarshal(b.Bytes(), &probe)
+	if err != nil {
+		return "", err
+	}
+
+	/*
+	var data map[string]interface{}
+	err = json.Unmarshal(probe["streams"].([]interface{})[0].([]byte), &data)
+	if err != nil {
+		return "", err
+	}
+	*/
+
+	width := probe["streams"].([]interface{})[0].(map[string]interface{})["width"].(float64)
+	height := probe["streams"].([]interface{})[0].(map[string]interface{})["height"].(float64)
+
+	if 16. / 9. - 0.001 <= width / height && width / height <= 16. / 9. + 0.001 {
+		return "16:9", nil
+	}
+	if 9. / 16. - 0.001 <= width / height && width / height <= 9. / 16. + 0.001 {
+		return "9:16", nil
+	}
+	return "other", nil
 }
