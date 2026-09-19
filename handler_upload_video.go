@@ -90,7 +90,27 @@ func (cfg *apiConfig) handlerUploadVideo(w http.ResponseWriter, r *http.Request)
 		return
 	}
 
-	aspect, err := getVideoAspectRatio(tempFile.Name())
+	processedFilePath, err := processVideoForFastStart(tempFile.Name())
+	if err != nil {
+		respondWithError(w, http.StatusBadRequest, "Unable to process file for fast start", err)
+		return
+	}
+
+	processedFile, err := os.Open(processedFilePath)
+	if err != nil {
+		respondWithError(w, http.StatusInternalServerError, "Unable to read processed file", err)
+		return
+	}
+	defer os.Remove(processedFilePath)
+	defer processedFile.Close()
+
+	_, err = processedFile.Seek(0, io.SeekStart)
+	if err != nil {
+		respondWithError(w, http.StatusBadRequest, "Unable to read file", fmt.Errorf("File seek problem"))
+		return
+	}
+
+	aspect, err := getVideoAspectRatio(processedFile.Name())
 	if err != nil {
 		respondWithError(w, http.StatusBadRequest, "Unable to read file", err)
 		return
@@ -112,7 +132,7 @@ func (cfg *apiConfig) handlerUploadVideo(w http.ResponseWriter, r *http.Request)
 	putObjectInput := s3.PutObjectInput{
 		Bucket: &cfg.s3Bucket,
 		Key: &fileName,
-		Body: tempFile,
+		Body: processedFile,
 		ContentType: &contentType,
 	}
 	_, err = cfg.s3Client.PutObject(context.Background(), &putObjectInput)
@@ -130,6 +150,18 @@ func (cfg *apiConfig) handlerUploadVideo(w http.ResponseWriter, r *http.Request)
 	}
 }
 
+func processVideoForFastStart(filePath string) (string, error) {
+	otuFilePath := filePath + ".processed"
+
+	cmd := exec.Command("ffmpeg", "-i", filePath, "-c", "copy", "-movflags", "faststart", "-f", "mp4", otuFilePath)
+	err := cmd.Run()
+	if err != nil {
+		return "", err
+	}
+
+	return otuFilePath, nil
+}
+
 func getVideoAspectRatio(filePath string) (string, error) {
 	cmd := exec.Command("ffprobe", "-v", "error", "-print_format", "json", "-show_streams", filePath)
 	var b bytes.Buffer
@@ -145,14 +177,6 @@ func getVideoAspectRatio(filePath string) (string, error) {
 	if err != nil {
 		return "", err
 	}
-
-	/*
-	var data map[string]interface{}
-	err = json.Unmarshal(probe["streams"].([]interface{})[0].([]byte), &data)
-	if err != nil {
-		return "", err
-	}
-	*/
 
 	width := probe["streams"].([]interface{})[0].(map[string]interface{})["width"].(float64)
 	height := probe["streams"].([]interface{})[0].(map[string]interface{})["height"].(float64)
